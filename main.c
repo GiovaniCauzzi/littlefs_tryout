@@ -1,4 +1,11 @@
-#include "./littlefs-master/lfs.h"
+#include "./external/littlefs/lfs.h"
+
+enum
+{
+    QUIET,
+    VERBOSE,
+};
+
 
 // variables used by the filesystem
 lfs_t lfs;
@@ -79,8 +86,43 @@ const struct lfs_config cfg = {
     .block_cycles = 500,
 };
 
-// entry point
-int main(void)
+int basic(uint8_t verbose)
+{
+    // mount the filesystem
+    memset(flash, 0xFF, FLASH_SIZE);
+    char fileName[16] = "testFile.txt";
+
+    if (lfs_mount(&lfs, &cfg))
+    {
+        lfs_format(&lfs, &cfg);
+        lfs_mount(&lfs, &cfg);
+    }
+
+    for (int i = 0; i < 10000; i++)
+    {
+        uint32_t boot_count = 0;
+
+        lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
+        lfs_file_read(&lfs, &file, &boot_count, sizeof(boot_count));
+
+        boot_count++;
+
+        lfs_file_rewind(&lfs, &file);
+        lfs_file_write(&lfs, &file, &boot_count, sizeof(boot_count));
+        lfs_file_close(&lfs, &file);
+
+        if (verbose)
+        {
+            printf("boot_count=%u\n", boot_count);
+        }
+    }
+
+    lfs_unmount(&lfs);
+    return 0;
+}
+
+
+int multiple_files(uint8_t verbose)
 {
     // mount the filesystem
     memset(flash, 0xFF, FLASH_SIZE);
@@ -91,33 +133,30 @@ int main(void)
         lfs_mount(&lfs, &cfg);
     }
 
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < 100; i++)
     {
+        char fileName[16];
+        sprintf(fileName, "file%u.txt", i);
 
-        uint32_t boot_count = 0;
-
-        lfs_file_open(&lfs, &file,
-                      "boot_count",
-                      LFS_O_RDWR | LFS_O_CREAT);
-
-        lfs_file_read(&lfs, &file,
-                      &boot_count,
-                      sizeof(boot_count));
-
-        boot_count++;
-
-        lfs_file_rewind(&lfs, &file);
-
-        lfs_file_write(&lfs, &file,
-                       &boot_count,
-                       sizeof(boot_count));
-
+        lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
+        lfs_file_write(&lfs, &file, fileName, strlen(fileName));
         lfs_file_close(&lfs, &file);
 
-        printf("boot_count=%u\n", boot_count);
+        if (verbose)
+        {
+            printf("Created file: %s\n", fileName);
+        }
     }
 
     lfs_unmount(&lfs);
+    return 0;
+}
 
-    return 1;
+
+int main(void)
+{
+    if (basic(QUIET)) return 1;
+    if (multiple_files(VERBOSE)) return 1;
+
+    return 0;
 }
