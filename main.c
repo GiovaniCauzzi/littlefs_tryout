@@ -152,11 +152,56 @@ int multiple_files(uint8_t verbose)
     return 0;
 }
 
+void print_file_metadata(lfs_t *lfs, const char *path)
+{
+    struct lfs_info info;
+    
+    // Call lfs_stat
+    int err = lfs_stat(lfs, path, &info);
+    
+    if (err < 0) {
+        printf("Error getting status or file does not exist: %d\n", err);
+        return;
+    }
+    
+    // Process the metadata
+    printf("Name: %s\n", info.name);
+    if (info.type == LFS_TYPE_REG) {
+        printf("Type: Regular File\n");
+        printf("Size: %u bytes\n", (unsigned int)info.size);
+    } else if (info.type == LFS_TYPE_DIR) {
+        printf("Type: Directory\n");
+    }
+}
+
+int file_metadata(uint8_t verbose)
+{
+    memset(flash, 0xFF, FLASH_SIZE);
+    char fileName[16] = "meta.txt";
+    char content[500] = {0xaa};
+
+    if (lfs_mount(&lfs, &cfg))
+    {
+        lfs_format(&lfs, &cfg);
+        lfs_mount(&lfs, &cfg);
+    }
+
+    lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_write(&lfs, &file, content, strlen(content));
+    lfs_file_close(&lfs, &file);
+
+    if (verbose)
+    {
+        print_file_metadata(&lfs, fileName);
+    }
+}
 
 int main(void)
 {
+    // choose between QUIET and VERBOSE modes
     if (basic(QUIET)) return 1;
-    if (multiple_files(VERBOSE)) return 1;
+    if (multiple_files(QUIET)) return 1;
+    if (file_metadata(VERBOSE)) return 1;
 
     return 0;
 }
