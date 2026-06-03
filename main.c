@@ -80,56 +80,44 @@ const struct lfs_config cfg = {
 };
 
 // entry point
-int main(void) {
+int main(void)
+{
     // mount the filesystem
     memset(flash, 0xFF, FLASH_SIZE);
-    int err = lfs_mount(&lfs, &cfg);
 
-    // reformat if we can't mount the filesystem
-    // this should only happen on the first boot
-if (err) {
-    err = lfs_format(&lfs, &cfg);
-    if (err) {
-        printf("format failed: %d\n", err);
-        return err;
-    }
-
-    err = lfs_mount(&lfs, &cfg);
-    if (err) {
-        printf("mount failed: %d\n", err);
-        return err;
-    }
-}
-    uint32_t counter = 10000;
-    while (counter--)
+    if (lfs_mount(&lfs, &cfg))
     {
-        // read current count
+        lfs_format(&lfs, &cfg);
+        lfs_mount(&lfs, &cfg);
+    }
+
+    for (int i = 0; i < 10000; i++)
+    {
+
         uint32_t boot_count = 0;
-        err = lfs_file_open(&lfs, &file, "boot_count", LFS_O_RDWR | LFS_O_CREAT);
-        if (err) {
-            printf("file open failed: %d\n", err);
-            return err;
-        }
-        err = lfs_file_read(&lfs, &file, &boot_count, sizeof(boot_count));
-        if (err) {
-            printf("file read failed: %d\n", err);
-            return err;
-        }
 
-        // update boot count
-        boot_count += 1;
+        lfs_file_open(&lfs, &file,
+                      "boot_count",
+                      LFS_O_RDWR | LFS_O_CREAT);
+
+        lfs_file_read(&lfs, &file,
+                      &boot_count,
+                      sizeof(boot_count));
+
+        boot_count++;
+
         lfs_file_rewind(&lfs, &file);
-        lfs_file_write(&lfs, &file, &boot_count, sizeof(boot_count));
 
-        // remember the storage is not updated until the file is closed successfully
+        lfs_file_write(&lfs, &file,
+                       &boot_count,
+                       sizeof(boot_count));
+
         lfs_file_close(&lfs, &file);
 
-        // release any resources we were using
-        lfs_unmount(&lfs);
-
-        // print the boot count
-        printf("boot_count: %d\n", boot_count);
+        printf("boot_count=%u\n", boot_count);
     }
+
+    lfs_unmount(&lfs);
 
     return 1;
 }
