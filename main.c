@@ -111,9 +111,9 @@ const struct lfs_config cfg = {
     .prog_size = 1,
     .block_size = BLOCK_SIZE,
     .block_count = BLOCK_COUNT,
-    .cache_size = 512,
-    .lookahead_size = 16,
-    .compact_thresh = -1,
+    .cache_size = 64,
+    .lookahead_size = BLOCK_COUNT/8,
+    // .compact_thresh = -1,
     .block_cycles = 50000,
 };
 
@@ -152,7 +152,7 @@ int basic(uint8_t verbose)
     return 0;
 }
 
-#define MAX_FILES 995
+#define MAX_FILES 1000
 int multiple_files(uint8_t verbose)
 {
     // mount the filesystem
@@ -248,14 +248,33 @@ int file_metadata(uint8_t verbose)
     {
         print_file_metadata(&locallfs, fileName);
     }
+    return 0;
+}
+
+void print_lfs_info(struct lfs_config *cfg)
+{
+    printf("LittleFS configuration\n");
+    printf("Flash size     : %u KB\n",
+           (cfg->block_size * cfg->block_count) / 1024);
+    printf("Block size     : %u\n", cfg->block_size);
+    printf("Block count    : %u\n", cfg->block_count);
+    printf("Cache size     : %u\n", cfg->cache_size);
+    printf("Lookahead size : %u\n", cfg->lookahead_size);
+}
+
+int simulate_binary_config_file(uint8_t verbose)
+{
 }
 
 int main(void)
 {
     // choose between QUIET and VERBOSE modes
+    print_lfs_info((struct lfs_config *)&cfg);
     if (basic(QUIET)) return 1;
-    if (multiple_files(VERBOSE)) return 1;
+    if (multiple_files(QUIET)) return 1;
     if (file_metadata(QUIET)) return 1;
+    if (simulate_binary_config_file(VERBOSE)) return 1;
+
 
     return 0;
 }
