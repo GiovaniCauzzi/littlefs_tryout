@@ -1,1 +1,6 @@
 littlefs.exe/
+flash_dump.bin
+
+# Ignore IDE and editor settings
+.vscode/
+littlefs.exe

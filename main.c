@@ -1,4 +1,11 @@
 #include "./external/littlefs/lfs.h"
+#include <stdio.h>
+#include <stdint.h>
+
+
+// variables used by the filesystem
+lfs_t lfs;
+lfs_file_t file;
 
 enum
 {
@@ -6,14 +13,37 @@ enum
     VERBOSE,
 };
 
+int save_flash_to_bin(const uint8_t *flash,
+                      size_t flash_size,
+                      const char *filename)
+{
+    FILE *fp = fopen(filename, "wb");
+    if (fp == NULL)
+    {
+        perror("fopen");
+        return -1;
+    }
 
-// variables used by the filesystem
-lfs_t lfs;
-lfs_file_t file;
+    size_t written = fwrite(flash, 1, flash_size, fp);
+
+    fclose(fp);
+
+    if (written != flash_size)
+    {
+        fprintf(stderr,
+                "Failed to write complete file (%zu/%zu bytes)\n",
+                written,
+                flash_size);
+        return -1;
+    }
+
+    return 0;
+}
 
 
+#define BLOCK_COUNT (128)
 #define BLOCK_SIZE (4096)
-#define FLASH_SIZE (BLOCK_SIZE * 128)
+#define FLASH_SIZE (BLOCK_SIZE * BLOCK_COUNT)
 static uint8_t flash[FLASH_SIZE];
 
 static inline uint32_t addr(uint32_t block, uint32_t off) {
@@ -77,13 +107,14 @@ const struct lfs_config cfg = {
     .sync  = user_provided_block_device_sync,
 
     // block device configuration
-    .read_size = 16,
-    .prog_size = 16,
+    .read_size = 1,
+    .prog_size = 1,
     .block_size = BLOCK_SIZE,
-    .block_count = 128,
-    .cache_size = 16,
+    .block_count = BLOCK_COUNT,
+    .cache_size = 512,
     .lookahead_size = 16,
-    .block_cycles = 500,
+    .compact_thresh = -1,
+    .block_cycles = 50000,
 };
 
 int basic(uint8_t verbose)
@@ -121,7 +152,7 @@ int basic(uint8_t verbose)
     return 0;
 }
 
-
+#define MAX_FILES 995
 int multiple_files(uint8_t verbose)
 {
     // mount the filesystem
@@ -133,13 +164,15 @@ int multiple_files(uint8_t verbose)
         lfs_mount(&lfs, &cfg);
     }
 
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < MAX_FILES; i++)
     {
         char fileName[16];
+        char content[100];
         sprintf(fileName, "file%u.txt", i);
+        snprintf(content, sizeof(content), "Content of file %u", i);
 
         lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
-        lfs_file_write(&lfs, &file, fileName, strlen(fileName));
+        lfs_file_write(&lfs, &file, content, strlen(content));
         lfs_file_close(&lfs, &file);
 
         if (verbose)
@@ -147,7 +180,26 @@ int multiple_files(uint8_t verbose)
             printf("Created file: %s\n", fileName);
         }
     }
+    
+    for (int i = 0; i < MAX_FILES; i++)
+    {
+        char fileName[16];
+        char readBuffer[100];
+        sprintf(fileName, "file%u.txt", i);
 
+        lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
+        int bytes_read = lfs_file_read(&lfs, &file, readBuffer, sizeof(readBuffer) - 1);
+
+        if (bytes_read >= 0 && verbose)
+        {
+            readBuffer[bytes_read] = '\0'; // Make it a C string
+            printf("Content: %s\n", readBuffer);
+        }
+
+        lfs_file_close(&lfs, &file);
+    }
+
+    save_flash_to_bin(flash, FLASH_SIZE, "flash_dump.bin");
     lfs_unmount(&lfs);
     return 0;
 }
@@ -176,23 +228,25 @@ void print_file_metadata(lfs_t *lfs, const char *path)
 
 int file_metadata(uint8_t verbose)
 {
+    lfs_t locallfs;
+    lfs_file_t localfile;
     memset(flash, 0xFF, FLASH_SIZE);
     char fileName[16] = "meta.txt";
     char content[5000] = {0xaa};
 
-    if (lfs_mount(&lfs, &cfg))
+    if (lfs_mount(&locallfs, &cfg))
     {
-        lfs_format(&lfs, &cfg);
-        lfs_mount(&lfs, &cfg);
+        lfs_format(&locallfs, &cfg);
+        lfs_mount(&locallfs, &cfg);
     }
 
-    lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
-    lfs_file_write(&lfs, &file, &content[0], sizeof(content));
-    lfs_file_close(&lfs, &file);
+    lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_write(&locallfs, &localfile, &content[0], sizeof(content));
+    lfs_file_close(&locallfs, &localfile);
 
     if (verbose)
     {
-        print_file_metadata(&lfs, fileName);
+        print_file_metadata(&locallfs, fileName);
     }
 }
 
@@ -200,8 +254,8 @@ int main(void)
 {
     // choose between QUIET and VERBOSE modes
     if (basic(QUIET)) return 1;
-    if (multiple_files(QUIET)) return 1;
-    if (file_metadata(VERBOSE)) return 1;
+    if (multiple_files(VERBOSE)) return 1;
+    if (file_metadata(QUIET)) return 1;
 
     return 0;
 }
