@@ -13,37 +13,11 @@ enum
     VERBOSE,
 };
 
-int save_flash_to_bin(const uint8_t *flash,
-                      size_t flash_size,
-                      const char *filename)
-{
-    FILE *fp = fopen(filename, "wb");
-    if (fp == NULL)
-    {
-        perror("fopen");
-        return -1;
-    }
+#define BLOCK_COUNT     512
+#define BLOCK_SIZE      4096
+#define FLASH_SIZE      BLOCK_SIZE * BLOCK_COUNT
+#define WEAR_LEVELING   100e3
 
-    size_t written = fwrite(flash, 1, flash_size, fp);
-
-    fclose(fp);
-
-    if (written != flash_size)
-    {
-        fprintf(stderr,
-                "Failed to write complete file (%zu/%zu bytes)\n",
-                written,
-                flash_size);
-        return -1;
-    }
-
-    return 0;
-}
-
-
-#define BLOCK_COUNT (128)
-#define BLOCK_SIZE (4096)
-#define FLASH_SIZE (BLOCK_SIZE * BLOCK_COUNT)
 static uint8_t flash[FLASH_SIZE];
 
 static inline uint32_t addr(uint32_t block, uint32_t off) {
@@ -114,8 +88,35 @@ const struct lfs_config cfg = {
     .cache_size = 64,
     .lookahead_size = BLOCK_COUNT/8,
     // .compact_thresh = -1,
-    .block_cycles = 50000,
+    .block_cycles = WEAR_LEVELING,
 };
+
+int save_flash_to_bin(const uint8_t *flash,
+                      size_t flash_size,
+                      const char *filename)
+{
+    FILE *fp = fopen(filename, "wb");
+    if (fp == NULL)
+    {
+        perror("fopen");
+        return -1;
+    }
+
+    size_t written = fwrite(flash, 1, flash_size, fp);
+
+    fclose(fp);
+
+    if (written != flash_size)
+    {
+        fprintf(stderr,
+                "Failed to write complete file (%zu/%zu bytes)\n",
+                written,
+                flash_size);
+        return -1;
+    }
+
+    return 0;
+}
 
 int basic(uint8_t verbose)
 {
@@ -290,16 +291,19 @@ int simulate_binary_config_file(uint8_t verbose)
         lfs_mount(&locallfs, &cfg);
     }
 
-    // Store config file in memory, simulating a embedded device config
-    lfs_file_open(&locallfs, &localfile, fileName, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-    lfs_file_write(&locallfs, &localfile, &config, sizeof(config));
-    lfs_file_sync(&locallfs, &localfile);
-    lfs_file_close(&locallfs, &localfile);
+    uint32_t counter = 10000;
+    while (counter--)
+    { // Store config file in memory, simulating a embedded device config
+        lfs_file_open(&locallfs, &localfile, fileName, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+        lfs_file_write(&locallfs, &localfile, &config, sizeof(config));
+        lfs_file_sync(&locallfs, &localfile);
+        lfs_file_close(&locallfs, &localfile);
 
-    // Load config file from memory and compare with original
-    lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDONLY);
-    lfs_file_read(&locallfs, &localfile, &configLoad, sizeof(configLoad));
-    lfs_file_close(&locallfs, &localfile);
+        // Load config file from memory and compare with original
+        lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDONLY);
+        lfs_file_read(&locallfs, &localfile, &configLoad, sizeof(configLoad));
+        lfs_file_close(&locallfs, &localfile);
+    }
 
     if (memcmp(&config, &configLoad, sizeof(config)) != 0)
     {
@@ -316,6 +320,7 @@ int simulate_binary_config_file(uint8_t verbose)
         printf("  version   : %u\n", configLoad.version);
         printf("  someString: %s\n", configLoad.someString);
     }
+    save_flash_to_bin(flash, FLASH_SIZE, "config.bin");
     return 0;
 }
 
@@ -327,7 +332,6 @@ int main(void)
     if (multiple_files(QUIET)) return 1;
     if (file_metadata(QUIET)) return 1;
     if (simulate_binary_config_file(VERBOSE)) return 1;
-
 
     return 0;
 }
