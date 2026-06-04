@@ -178,7 +178,7 @@ int file_metadata(uint8_t verbose)
 {
     memset(flash, 0xFF, FLASH_SIZE);
     char fileName[16] = "meta.txt";
-    char content[500] = {0xaa};
+    char content[5000] = {0xaa};
 
     if (lfs_mount(&lfs, &cfg))
     {
@@ -187,7 +187,7 @@ int file_metadata(uint8_t verbose)
     }
 
     lfs_file_open(&lfs, &file, fileName, LFS_O_RDWR | LFS_O_CREAT);
-    lfs_file_write(&lfs, &file, content, strlen(content));
+    lfs_file_write(&lfs, &file, &content[0], sizeof(content));
     lfs_file_close(&lfs, &file);
 
     if (verbose)
