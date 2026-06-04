@@ -262,8 +262,61 @@ void print_lfs_info(struct lfs_config *cfg)
     printf("Lookahead size : %u\n", cfg->lookahead_size);
 }
 
-int simulate_binary_config_file(uint8_t verbose)
+typedef struct
 {
+    uint8_t someFlag;
+    uint32_t magic;
+    uint32_t version;
+    char someString[32];
+} config_header_t;
+
+int simulate_binary_config_file(uint8_t verbose)
+{    
+    lfs_t locallfs;
+    lfs_file_t localfile;
+    memset(flash, 0xFF, FLASH_SIZE);
+    char fileName[16] = "config.bin";
+    config_header_t config = {
+        .someFlag = 0xAB,
+        .magic = 0xDEADBEEF,
+        .version = 1,
+        .someString = "Hello, LittleFS!"
+    };
+    config_header_t configLoad;
+
+    if (lfs_mount(&locallfs, &cfg))
+    {
+        lfs_format(&locallfs, &cfg);
+        lfs_mount(&locallfs, &cfg);
+    }
+
+    // Store config file in memory, simulating a embedded device config
+    lfs_file_open(&locallfs, &localfile, fileName, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+    lfs_file_write(&locallfs, &localfile, &config, sizeof(config));
+    lfs_file_sync(&locallfs, &localfile);
+    lfs_file_close(&locallfs, &localfile);
+
+    // Load config file from memory and compare with original
+    lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDONLY);
+    lfs_file_read(&locallfs, &localfile, &configLoad, sizeof(configLoad));
+    lfs_file_close(&locallfs, &localfile);
+
+    if (memcmp(&config, &configLoad, sizeof(config)) != 0)
+    {
+        printf("Error: Loaded config does not match saved config!\n");
+        return -1;
+    }
+
+    if (verbose)
+    {
+        printf("Written binary config file: %s\n", fileName);
+        printf("Config contents:\n");
+        printf("  someFlag : 0x%02X\n", configLoad.someFlag);
+        printf("  magic     : 0x%08X\n", configLoad.magic);
+        printf("  version   : %u\n", configLoad.version);
+        printf("  someString: %s\n", configLoad.someString);
+    }
+    return 0;
 }
 
 int main(void)
