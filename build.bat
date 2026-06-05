@@ -1,5 +1,5 @@
 
 del littlefs.exe
 gcc -g -O0 main.c ./external/littlefs/lfs.c ./external/littlefs/lfs_util.c -o littlefs.exe -Wall -Wextra
-
+@REM gcc -O2 -flto -march=native main.c ./external/littlefs/lfs.c ./external/littlefs/lfs_util.c -o littlefs.exe -Wall -Wextra
 littlefs.exe

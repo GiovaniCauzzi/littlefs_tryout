@@ -13,7 +13,7 @@ enum
     VERBOSE,
 };
 
-#define BLOCK_COUNT     512
+#define BLOCK_COUNT     128
 #define BLOCK_SIZE      4096
 #define FLASH_SIZE      BLOCK_SIZE * BLOCK_COUNT
 #define WEAR_LEVELING   100e3
@@ -409,16 +409,17 @@ int simulate_binary_config_file(uint8_t verbose)
     return 0;
 }
 
-
-
+#define CONTENT_SIZE 0x10000
 int explore_folders(uint8_t verbose)
 {
     lfs_t locallfs;
     lfs_file_t localfile;
     memset(flash, 0xFF, FLASH_SIZE);
     char fileName[16] = "config.bin";
-    char content[16] = "someContent";
-    char contentLoad[16];
+    char content[CONTENT_SIZE] = {0x55};
+    char contentLoad[CONTENT_SIZE];
+
+    memset(content, 0x55, sizeof(content));
 
     if (verbose) printf("Exploring folder creation and file storage within folders...\n");
     
@@ -457,11 +458,11 @@ int explore_folders(uint8_t verbose)
         return 1;
     }
     // it really fails if trying to create again
-    if (lfs_mkdir(&locallfs, "/config/config2"))
-    {
-        if (verbose) printf("Failed to detect existing directory\n");
-        return 1;
-    }
+    // if (lfs_mkdir(&locallfs, "/config/config2"))
+    // {
+    //     if (verbose) printf("Failed to detect existing directory\n");
+    //     return 1;
+    // }
 
     char path[128];
     snprintf(path, sizeof(path), "%s/%s", "/config", fileName);
@@ -490,6 +491,7 @@ int explore_folders(uint8_t verbose)
     }   
 
     if (verbose) lfs_print_tree(&locallfs);
+    save_flash_to_bin(flash, FLASH_SIZE, "folders.bin");
     return 0;
 }
 
