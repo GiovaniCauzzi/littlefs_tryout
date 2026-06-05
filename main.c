@@ -91,6 +91,83 @@ const struct lfs_config cfg = {
     .block_cycles = WEAR_LEVELING,
 };
 
+static void print_dir_recursive(lfs_t *lfs,
+                                const char *path,
+                                int depth)
+{
+    lfs_dir_t dir;
+    struct lfs_info info;
+
+    char fullpath[512];
+
+    int err = lfs_dir_open(lfs, &dir, path);
+    if (err < 0)
+    {
+        printf("%*s[ERR] cannot open %s (%d)\n",
+               depth * 2, "", path, err);
+        return;
+    }
+
+    while (true)
+    {
+        int res = lfs_dir_read(lfs, &dir, &info);
+        if (res < 0)
+        {
+            printf("%*s[ERR] read failed (%d)\n",
+                   depth * 2, "", res);
+            break;
+        }
+
+        if (res == 0)
+        {
+            break; // end of directory
+        }
+
+        // Skip "." and ".."
+        if (strcmp(info.name, ".") == 0 ||
+            strcmp(info.name, "..") == 0)
+        {
+            continue;
+        }
+
+        printf("%*s%s",
+               depth * 2, "",
+               info.name);
+
+        if (info.type == LFS_TYPE_DIR)
+        {
+            printf("/\n");
+
+            // build next path
+            if (strcmp(path, "/") == 0)
+            {
+                snprintf(fullpath, sizeof(fullpath),
+                         "/%s", info.name);
+            }
+            else
+            {
+                snprintf(fullpath, sizeof(fullpath),
+                         "%s/%s", path, info.name);
+            }
+
+            print_dir_recursive(lfs, fullpath, depth + 1);
+        }
+        else
+        {
+            printf(" (%lu bytes)\n",
+                   (unsigned long)info.size);
+        }
+    }
+
+    lfs_dir_close(lfs, &dir);
+}
+
+void lfs_print_tree(lfs_t *lfs)
+{
+    printf("LittleFS tree:\n");
+    print_dir_recursive(lfs, "/", 0);
+}
+
 int save_flash_to_bin(const uint8_t *flash,
                       size_t flash_size,
                       const char *filename)
@@ -272,7 +349,7 @@ typedef struct
 } config_header_t;
 
 int simulate_binary_config_file(uint8_t verbose)
-{    
+{
     lfs_t locallfs;
     lfs_file_t localfile;
     memset(flash, 0xFF, FLASH_SIZE);
@@ -281,9 +358,10 @@ int simulate_binary_config_file(uint8_t verbose)
         .someFlag = 0xAB,
         .magic = 0xDEADBEEF,
         .version = 1,
-        .someString = "Hello, LittleFS!"
-    };
+        .someString = "Hello, LittleFS!"};
     config_header_t configLoad;
+
+    if (verbose) printf("Simulating binary config file storage and retrieval...\n");
 
     if (lfs_mount(&locallfs, &cfg))
     {
@@ -291,18 +369,25 @@ int simulate_binary_config_file(uint8_t verbose)
         lfs_mount(&locallfs, &cfg);
     }
 
-    uint32_t counter = 10000;
+    uint32_t counter = 100;
     while (counter--)
     { // Store config file in memory, simulating a embedded device config
-        lfs_file_open(&locallfs, &localfile, fileName, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-        lfs_file_write(&locallfs, &localfile, &config, sizeof(config));
-        lfs_file_sync(&locallfs, &localfile);
-        lfs_file_close(&locallfs, &localfile);
+        if (lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDWR | LFS_O_CREAT))
+            return 1;
+        if (lfs_file_write(&locallfs, &localfile, &config, sizeof(config)) < 0)
+            return 1;
+        if (lfs_file_sync(&locallfs, &localfile) < 0)
+            return 1;
+        if (lfs_file_close(&locallfs, &localfile) < 0)
+            return 1;
 
         // Load config file from memory and compare with original
-        lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDONLY);
-        lfs_file_read(&locallfs, &localfile, &configLoad, sizeof(configLoad));
-        lfs_file_close(&locallfs, &localfile);
+        if (lfs_file_open(&locallfs, &localfile, fileName, LFS_O_RDONLY) < 0)
+            return 1;
+        if (lfs_file_read(&locallfs, &localfile, &configLoad, sizeof(configLoad)) < 0)
+            return 1;
+        if (lfs_file_close(&locallfs, &localfile) < 0)
+            return 1;
     }
 
     if (memcmp(&config, &configLoad, sizeof(config)) != 0)
@@ -324,14 +409,104 @@ int simulate_binary_config_file(uint8_t verbose)
     return 0;
 }
 
+
+
+int explore_folders(uint8_t verbose)
+{
+    lfs_t locallfs;
+    lfs_file_t localfile;
+    memset(flash, 0xFF, FLASH_SIZE);
+    char fileName[16] = "config.bin";
+    char content[16] = "someContent";
+    char contentLoad[16];
+
+    if (verbose) printf("Exploring folder creation and file storage within folders...\n");
+    
+    if (lfs_mount(&locallfs, &cfg))
+    {
+        lfs_format(&locallfs, &cfg);
+        lfs_mount(&locallfs, &cfg);
+    }
+
+    if (lfs_mkdir(&locallfs, "/config") < 0)
+    {
+        if (verbose) printf("Failed to create directory\n");
+        return 1;
+    }
+
+    if (lfs_mkdir(&locallfs, "/config/config1") < 0)
+    {
+        if (verbose) printf("Failed to create directory\n");
+        return 1;
+    }
+
+    if (lfs_mkdir(&locallfs, "/config/config1/foo") < 0)
+    {
+        if (verbose) printf("Failed to create directory\n");
+        return 1;
+    }
+    if (lfs_mkdir(&locallfs, "/config/config1/bar") < 0)
+    {
+        if (verbose) printf("Failed to create directory\n");
+        return 1;
+    }
+
+    if (lfs_mkdir(&locallfs, "/config/config2") < 0)
+    {
+        if (verbose) printf("Failed to create directory\n");
+        return 1;
+    }
+    // it really fails if trying to create again
+    if (lfs_mkdir(&locallfs, "/config/config2"))
+    {
+        if (verbose) printf("Failed to detect existing directory\n");
+        return 1;
+    }
+
+    char path[128];
+    snprintf(path, sizeof(path), "%s/%s", "/config", fileName);
+    if (verbose) printf("Creating file at path: %s\n", path);
+
+    if (lfs_file_open(&locallfs, &localfile, path, LFS_O_RDWR | LFS_O_CREAT) < 0)
+        return 1;
+    if (lfs_file_write(&locallfs, &localfile, &content, sizeof(content)) < 0)
+        return 1;
+    if (lfs_file_sync(&locallfs, &localfile) < 0)
+        return 1;
+    if (lfs_file_close(&locallfs, &localfile) < 0)
+        return 1;
+
+    if (lfs_file_open(&locallfs, &localfile, path, LFS_O_RDONLY) < 0)
+        return 1;
+    if (lfs_file_read(&locallfs, &localfile, &contentLoad, sizeof(contentLoad)) < 0)
+        return 1;
+    if (lfs_file_close(&locallfs, &localfile) < 0)
+        return 1;
+
+    if (memcmp(content, contentLoad, sizeof(content)) != 0)
+    {
+        if (verbose) printf("Error: Loaded content does not match saved content!\n");
+        return -1;
+    }   
+
+    if (verbose) lfs_print_tree(&locallfs);
+    return 0;
+}
+
 int main(void)
 {
     // choose between QUIET and VERBOSE modes
     print_lfs_info((struct lfs_config *)&cfg);
-    if (basic(QUIET)) return 1;
-    if (multiple_files(QUIET)) return 1;
-    if (file_metadata(QUIET)) return 1;
-    if (simulate_binary_config_file(VERBOSE)) return 1;
+    if (basic(QUIET))
+        return 1;
+    if (multiple_files(QUIET))
+        return 1;
+    if (file_metadata(QUIET))
+        return 1;
+    if (simulate_binary_config_file(QUIET))
+        return 1;
+    if (explore_folders(VERBOSE))
+        return 1;
 
     return 0;
 }
