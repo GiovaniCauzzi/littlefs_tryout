@@ -61,7 +61,7 @@ int user_provided_block_device_erase(const struct lfs_config *c,
     (void)c;
 
     uint32_t a = addr(block, 0);
-    memset(&flash[a], 0xFF, 4096);
+    memset(&flash[a], 0xFF, BLOCK_SIZE);
 
     return 0;
 }
